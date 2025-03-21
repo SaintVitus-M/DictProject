@@ -3,9 +3,9 @@ package software.ulpgc.edp;
 
 public class Dictionary<K, V> implements Dict<K, V> {
     protected static class Entry<K, V> implements Dict.Entry<K, V>{
-        private final K key;
+        private K key;
         private V value;
-        private final int keyHash;
+        private int keyHash;
 
         Entry(K newKey, V newValue, int keyHash) {
             this.key = newKey;
@@ -36,10 +36,13 @@ public class Dictionary<K, V> implements Dict<K, V> {
     private static final int MIN_SIZE = 1 << 4;
     private static final int MAX_SIZE = 1 << 30;
     private static final int PERTURB_SHIFT = 5;
-    private int size;
+    private static final Object dummy = null;
+    private int used;
+    private int fill;
     private int mask;
     private int threshold;
     private Entry<K, V>[] table;
+
 
     private static final float LOAD_FACTOR = 0.75F; //rehashing
 
@@ -49,20 +52,22 @@ public class Dictionary<K, V> implements Dict<K, V> {
     }
 
     public Dictionary() {
-        this.size = 0;
+        this.used = 0;
+        this.fill = 0;
         this.mask = MIN_SIZE - 1;
     }
+
     private static int hash(Object key) {
         return Math.abs(key.hashCode());
     }
-
     public Dictionary(int inititalCapacity) {
         if(inititalCapacity < 0)
             throw new IllegalArgumentException("Illegal initial capacity: " +
                     inititalCapacity);
         if(inititalCapacity > MAX_SIZE)
             inititalCapacity = MAX_SIZE;
-        this.size = 0;
+        this.used = 0;
+        this.fill = 0;
         this.threshold = tableSizeFor(inititalCapacity);
         this.mask = threshold - 1;
 
@@ -70,12 +75,12 @@ public class Dictionary<K, V> implements Dict<K, V> {
 
     @Override
     public Dict.Entry<K, V>[] items() {
-        if(size == 0) return null;
+        if(used == 0) return null;
         @SuppressWarnings("unchecked")
-        Entry<K, V>[] entryTab = (Entry<K, V>[]) new Entry[size];
+        Entry<K, V>[] entryTab = (Entry<K, V>[]) new Entry[used];
         int i = 0;
         int j = 0;
-        while(i < table.length && j < size) {
+        while(i < table.length && j < used) {
             if(table[i] == null) {
                 i++;
             } else {
@@ -107,27 +112,27 @@ public class Dictionary<K, V> implements Dict<K, V> {
         Entry<K, V> entry = table[index];
         if(entry == null) return false;
         table[index] = null;
-        size--;
+        used--;
         return true;
     }
 
     @Override
     public int size() {
-        return size;
+        return used;
     }
 
     @Override
     public void clear() {
         Entry<K, V>[] tab;
-        if((tab = table) != null && size > 0) {
-            size = 0;
+        if((tab = table) != null && used > 0) {
+            used = 0;
             for (int i = 0; i < tab.length; i++) tab[i] = null;
         }
     }
 
     @Override
     public boolean isEmpty() {
-        return size == 0;
+        return used == 0;
     }
 
     @Override
@@ -145,17 +150,56 @@ public class Dictionary<K, V> implements Dict<K, V> {
         return result.toString();
     }
 
+    @Override
+    public boolean containsKey(K key) {
+        return get(key) != null;
+    }
+
+
+    // --------------- Private methods --------------- //
     private void insert(K key, int hash, V value) {
         if(table == null) resize();
         int index = lookDict_string(key, hash);
         Entry<K, V> entry = table[index];
         if(entry == null) {
             table[index] = new Entry<>(key, value, hash);
-            if(++size > threshold)
+            if(++used > threshold)
                 resize();
         } else {
             entry.value = value;
         }
+    }
+
+    private void new_insert(K key, int hash, V value) {
+        int i = lookDict_string(key, hash);
+        Entry<K, V> ep = table[i];
+        if(ep == null) {
+            table[i] = new Entry<>(key, value, hash);
+        }
+        else {
+            if(ep.key == null) {
+                fill++;
+            }
+            ep.key = key;
+            ep.keyHash = hash;
+            ep.value = value;
+            used++;
+        }
+    }
+
+    private void insert_clean(K key, int hash, V value) {
+        int i = hash & mask;
+        Entry<K, V> ep = table[i];
+        for (int perturb = hash; ep.key != null; perturb >>= PERTURB_SHIFT) {
+            i = (1 << 2) + i + perturb + 1;
+            ep = table[i & mask];
+        }
+        fill++;
+        ep.key = key;
+        ep.keyHash = hash;
+        ep.value = value;
+        used++;
+
     }
 
     private void resize() {
@@ -193,10 +237,32 @@ public class Dictionary<K, V> implements Dict<K, V> {
                 Entry<K, V> e;
                 if((e = oldTab[i]) != null) {
                     oldTab[i] = null;
-                    newTab[lookDict_string(e.key, e.keyHash)] = e;
+                    newTab[lookDict_string(e.key, e.getHashCode())] = e;
                 }
             }
         }
+    }
+
+    private void new_resize(int minUsed) {
+        int i;
+        Entry<K, V>[] newTable;
+        int newSize = MIN_SIZE;
+
+        while(newSize <= minUsed && newSize > 0) {
+            newSize <<= 1;
+        }
+
+        Entry<K, V>[] oldTable = table;
+
+        if(newSize == MIN_SIZE) {
+            newTable = createTable(MIN_SIZE);
+            if(new)
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Entry<K, V>[] createTable(int cap) {
+        return (Entry<K, V>[]) new Entry[cap];
     }
 
     /**
@@ -252,7 +318,7 @@ public class Dictionary<K, V> implements Dict<K, V> {
         if(entry == null) { // Si el hueco está vacío...
             return i;
         } else {            // En el caso contrario...
-            if(entry.keyHash == hash && entry.key.equals(key)) {    // ¿Coincide el valor de la clave y su hash?
+            if(entry.getHashCode() == hash && entry.key.equals(key)) {    // ¿Coincide el valor de la clave y su hash?
                 return i;                                           // Lo devuelvo
             }                                                       // Si no...
             for(int perturb = hash; ; perturb >>= PERTURB_SHIFT) {  // Iniciamos la recurrencia tantas veces hasta
@@ -262,7 +328,7 @@ public class Dictionary<K, V> implements Dict<K, V> {
                     return i;
                 }
                 else {
-                    if (entry.keyHash == hash
+                    if (entry.getHashCode() == hash
                             && entry.key.equals(key))
                         return i;
                 }

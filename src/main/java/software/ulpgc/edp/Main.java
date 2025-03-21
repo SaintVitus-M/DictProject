@@ -7,14 +7,14 @@ public class Main {
 
     public static void main(String[] args) {
         Dict<String, Integer> dict = new Dictionary<>();
-        for (int i = 0; i < 100 ; i++) {
-            dict.add("P" + i, 100 + 1);
+        for (int i = 1; i <= 200 ; i++) {
+            dict.add("P" + i, rand.nextInt(100));
         }
-        int nullCount = 0;
+        int count = 0;
         for (Dict.Entry<String, Integer> key : dict.items()) {
             System.out.println(key);
-            if(key == null) nullCount++;
+            count++;
         }
-        System.out.println(nullCount);
+        System.out.println(count);
     }
 }
